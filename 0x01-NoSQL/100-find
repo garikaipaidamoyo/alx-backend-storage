@@ -1,0 +1,7 @@
+db = connect("localhost:27017/my_db")
+
+// Use a regular expression to find documents where the name starts with "Holberton"
+var results = db.school.find({ name: /^Holberton/ })
+
+// Print the results
+results.forEach(printjson)
