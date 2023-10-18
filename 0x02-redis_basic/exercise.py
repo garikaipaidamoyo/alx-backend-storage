@@ -1,7 +1,6 @@
 import redis
 import uuid
-from typing import Union, Callable, Optional
-import functools
+from typing import Union, Callable
 
 
 class Cache:
@@ -32,35 +31,51 @@ class Cache:
         return key
 
 
-def count_calls(method: Callable) -> Callable:
+def call_history(method: Callable) -> Callable:
     """
-    A decorator that counts how many times a method is called.
+    Decorator to store the history of inputs and
+    outputs for a function in Redis.
     """
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
-        key = method.__qualname__
-        count = self._redis.incr(key)
+        # Get the qualified name of the method
+        method_name = method.__qualname__
+
+        # Convert input arguments to a string and store in Redis
+        input_key = f"{method_name}:inputs"
+        self._redis.rpush(input_key, str(args))
+
+        # Execute the wrapped function to retrieve the output
         result = method(self, *args, **kwargs)
+
+        # Store the output in Redis
+        output_key = f"{method_name}:outputs"
+        self._redis.rpush(output_key, result)
+
         return result
+
     return wrapper
 
 
 if __name__ == "__main__":
     cache = Cache()
 
-    @count_calls
-    def decorated_store(data: Union[str, bytes, int, float] = None) -> str:
-        return cache.store(data)
+    # Decorate Cache.store with call_history
+    Cache.store = call_history(Cache.store)
 
-    cache.store(b"first")
-    print(
-            decorated_store.__qualname__,
-            cache.get(decorated_store.__qualname__)
+    s1 = cache.store("first")
+    print(s1)
+    s2 = cache.store("secont")
+    print(s2)
+    s3 = cache.store("third")
+    print(s3)
+
+    inputs = cache._redis.lrange(
+        f"{cache.store.__qualname__}:inputs", 0, -1
+    )
+    outputs = cache._redis.lrange(
+        f"{cache.store.__qualname__}:outputs", 0, -1
     )
 
-    cache.store(b"second")
-    cache.store(b"third")
-    print(
-            decorated_store.__qualname__,
-            cache.get(decorated_store.__qualname__)
-    )
+    print("inputs:", [input.decode() for input in inputs])
+    print("outputs:", [output.decode() for output in outputs])
