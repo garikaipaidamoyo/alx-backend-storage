@@ -1,6 +1,6 @@
 import redis
 import uuid
-from typing import Union, Callable
+from typing import Union, Callable, List
 
 
 class Cache:
@@ -31,51 +31,30 @@ class Cache:
         return key
 
 
-def call_history(method: Callable) -> Callable:
+def replay(func: Callable) -> None:
     """
-    Decorator to store the history of inputs and
-    outputs for a function in Redis.
+    Display the history of calls of a particular function.
+
+    Args:
+        func: The function for which to display the call history.
     """
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        # Get the qualified name of the method
-        method_name = method.__qualname__
+    method_name = func.__qualname__
+    inputs = cache._redis.lrange(f"{method_name}:inputs", 0, -1)
+    outputs = cache._redis.lrange(f"{method_name}:outputs", 0, -1)
 
-        # Convert input arguments to a string and store in Redis
-        input_key = f"{method_name}:inputs"
-        self._redis.rpush(input_key, str(args))
+    print(f"{method_name} was called {len(inputs)} times:")
 
-        # Execute the wrapped function to retrieve the output
-        result = method(self, *args, **kwargs)
-
-        # Store the output in Redis
-        output_key = f"{method_name}:outputs"
-        self._redis.rpush(output_key, result)
-
-        return result
-
-    return wrapper
+    for input_args, output_key in zip(inputs, outputs):
+        input_args_str = input_args.decode()
+        output_key_str = output_key.decode()
+        print(f"{method_name}({input_args_str}) -> {output_key_str}")
 
 
 if __name__ == "__main__":
     cache = Cache()
 
-    # Decorate Cache.store with call_history
-    Cache.store = call_history(Cache.store)
+    s1 = cache.store("foo")
+    s2 = cache.store("bar")
+    s3 = cache.store(42)
 
-    s1 = cache.store("first")
-    print(s1)
-    s2 = cache.store("secont")
-    print(s2)
-    s3 = cache.store("third")
-    print(s3)
-
-    inputs = cache._redis.lrange(
-        f"{cache.store.__qualname__}:inputs", 0, -1
-    )
-    outputs = cache._redis.lrange(
-        f"{cache.store.__qualname__}:outputs", 0, -1
-    )
-
-    print("inputs:", [input.decode() for input in inputs])
-    print("outputs:", [output.decode() for output in outputs])
+    replay(cache.store)
